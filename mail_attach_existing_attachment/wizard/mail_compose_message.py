@@ -32,22 +32,33 @@ class MailComposeMessage(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super(MailComposeMessage, self).default_get(fields_list)
-        if res.get('res_id') and res.get('model') and \
-                res.get('composition_mode', '') != 'mass_mail' and\
-                not res.get('can_attach_attachment'):
+        if res.get('res_id') and res.get('model') and res.get('composition_mode', '') != 'mass_mail' and not res.get('can_attach_attachment'):
             res['can_attach_attachment'] = True  # pragma: no cover
         return res
 
+
     @api.model
-    def _get_object_attachment_domain(self):
-        return "[('res_model', '=', model), ('res_id', '=', res_id)]"
+    def _get_product_attachment_domain(self):
+        model = super(MailComposeMessage, self).default_get('default_model')
+        res_id = super(MailComposeMessage, self).default_get('default_res_id')
+        res_ids = []
+        if model.get('model') == u'sale.order':
+            order_lines = self.env[model.get('model')].browse(res_id.get('res_id')).order_line
+            for order_line in order_lines:
+                res_id = order_line.product_id.id
+                res_ids.append(res_id)
+            domain = [('res_model', '=', 'product.template'), ('res_id', 'in', res_ids), ('product_downloadable','=', True )]
+        else:
+            domain = "[('res_model', '=', model), ('res_id', '=', res_id)]"
+
+        return domain
 
     can_attach_attachment = fields.Boolean(string='Can Attach Attachment')
     object_attachment_ids = fields.Many2many(
         comodel_name='ir.attachment',
         relation='mail_compose_message_ir_attachments_object_rel',
         column1='wizard_id', column2='attachment_id', string='Attachments',
-        domain=lambda self: self._get_object_attachment_domain())
+        domain=lambda self: self._get_product_attachment_domain())
 
     @api.multi
     def get_mail_values(self, res_ids):
